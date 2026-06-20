@@ -6,7 +6,9 @@ spring:
     name: auth-service
 
   datasource:
-    url: jdbc:h2:mem:authdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;NON_KEYWORDS=USER
+    # File-mode H2 with AUTO_SERVER=TRUE so vendor-service (port 8082) can
+    # connect to the same database concurrently.  Start auth-service first.
+    url: jdbc:h2:file:~/thalicloud-data/thalidb;AUTO_SERVER=TRUE;NON_KEYWORDS=USER;DB_CLOSE_ON_EXIT=FALSE
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -19,7 +21,7 @@ spring:
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: create    # drops + recreates schema on every auth-service start
     show-sql: true
     properties:
       hibernate:
@@ -30,6 +32,15 @@ jwt:
   secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
   access-token-expiry-ms: 900000      # 15 min
   refresh-token-expiry-ms: 604800000  # 7 days
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
 
 logging:
   level:
