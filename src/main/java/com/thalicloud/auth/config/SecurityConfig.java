@@ -24,10 +24,17 @@ public class SecurityConfig {
     private final AuthenticationProvider authenticationProvider;
 
     private static final String[] PUBLIC_ENDPOINTS = {
+            // Vendor auth
             "/api/auth/register",
             "/api/auth/login",
             "/api/auth/refresh",
             "/api/auth/logout",
+            // Customer OTP auth (Phase 1 — SMS bypassed, hardcoded OTP 1234)
+            "/api/auth/send-otp",
+            "/api/auth/verify-otp",
+            "/api/auth/customer/refresh",
+            "/api/auth/customer/logout",
+            // Infrastructure
             "/h2-console/**",
             "/actuator/health"
     };

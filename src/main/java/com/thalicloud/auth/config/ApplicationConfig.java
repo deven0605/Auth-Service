@@ -1,5 +1,6 @@
 package com.thalicloud.auth.config;
 
+import com.thalicloud.auth.repository.CustomerRepository;
 import com.thalicloud.auth.repository.VendorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -18,11 +19,19 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 public class ApplicationConfig {
 
     private final VendorRepository vendorRepository;
+    private final CustomerRepository customerRepository;
 
     @Bean
     public UserDetailsService userDetailsService() {
-        return email -> vendorRepository.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("Vendor not found: " + email));
+        // Customer JWTs use phone (starts with "+") as subject; vendor JWTs use email.
+        return username -> {
+            if (username.startsWith("+")) {
+                return customerRepository.findByPhone(username)
+                        .orElseThrow(() -> new UsernameNotFoundException("Customer not found: " + username));
+            }
+            return vendorRepository.findByEmail(username)
+                    .orElseThrow(() -> new UsernameNotFoundException("Vendor not found: " + username));
+        };
     }
 
     @Bean
