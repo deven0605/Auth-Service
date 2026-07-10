@@ -41,6 +41,25 @@ public class Kitchen {
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+
+    // Nullable (not NOT NULL) even though these are conceptually required — Hibernate's
+    // ddl-auto: update emits a plain ADD COLUMN with no DEFAULT, which H2 rejects as NOT
+    // NULL against a table that may already have rows. Callers null-coalesce to sensible
+    // defaults (see KitchenDiscoveryServiceImpl) instead.
+    @Builder.Default
+    @Column(name = "is_veg")
+    private Boolean veg = true;
+
+    @Builder.Default
+    @Column(name = "eta_min_minutes")
+    private Integer etaMinMinutes = 25;
+
+    @Builder.Default
+    @Column(name = "eta_max_minutes")
+    private Integer etaMaxMinutes = 40;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

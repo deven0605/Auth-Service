@@ -66,13 +66,17 @@ public class AuthServiceImpl implements AuthService {
                 .build();
         vendorRepository.save(vendor);
 
-        Kitchen kitchen = Kitchen.builder()
+        Kitchen.KitchenBuilder kitchenBuilder = Kitchen.builder()
                 .vendor(vendor)
                 .kitchenName(req.getKitchenName())
                 .contactNumber(req.getContactNumber())
                 .opensAt(parseTime(req.getOpensAt()))
                 .closesAt(parseTime(req.getClosesAt()))
-                .build();
+                .imageUrl(req.getImageUrl());
+        if (req.getIsVeg() != null) {
+            kitchenBuilder.veg(req.getIsVeg());
+        }
+        Kitchen kitchen = kitchenBuilder.build();
         kitchenRepository.save(kitchen);
 
         KitchenAddress address = KitchenAddress.builder()

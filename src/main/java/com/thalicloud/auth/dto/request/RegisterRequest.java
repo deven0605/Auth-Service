@@ -52,4 +52,10 @@ public class RegisterRequest {
 
     @NotBlank(message = "Closing time is required")
     private String closesAt;
+
+    // ── Display (optional — defaulted when absent) ───────────────────────────
+
+    private String imageUrl;
+
+    private Boolean isVeg;
 }
