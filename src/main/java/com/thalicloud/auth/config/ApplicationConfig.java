@@ -1,6 +1,8 @@
 package com.thalicloud.auth.config;
 
+import com.thalicloud.auth.entity.DeliveryPartner;
 import com.thalicloud.auth.repository.CustomerRepository;
+import com.thalicloud.auth.repository.DeliveryPartnerRepository;
 import com.thalicloud.auth.repository.VendorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -20,11 +22,19 @@ public class ApplicationConfig {
 
     private final VendorRepository vendorRepository;
     private final CustomerRepository customerRepository;
+    private final DeliveryPartnerRepository deliveryPartnerRepository;
 
     @Bean
     public UserDetailsService userDetailsService() {
-        // Customer JWTs use phone (starts with "+") as subject; vendor JWTs use email.
+        // Delivery partner JWTs use "PARTNER:+91XXXXXXXXXX" as subject (disambiguates
+        // from a Customer's plain "+91XXXXXXXXXX", since the same phone could be both);
+        // Customer JWTs use phone (starts with "+"); vendor JWTs use email.
         return username -> {
+            if (username.startsWith(DeliveryPartner.USERNAME_PREFIX)) {
+                String phone = username.substring(DeliveryPartner.USERNAME_PREFIX.length());
+                return deliveryPartnerRepository.findByPhone(phone)
+                        .orElseThrow(() -> new UsernameNotFoundException("Delivery partner not found: " + phone));
+            }
             if (username.startsWith("+")) {
                 return customerRepository.findByPhone(username)
                         .orElseThrow(() -> new UsernameNotFoundException("Customer not found: " + username));

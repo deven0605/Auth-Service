@@ -58,7 +58,11 @@ public class CustomerAuthServiceImpl implements CustomerAuthService {
     // ── Verify OTP (FR-1.6 — FR-1.9) ─────────────────────────────────────────
 
     @Override
-    @Transactional
+    // noRollbackFor: a wrong-OTP attempt still throws AuthException to fail the
+    // request, but the attemptCount/lockedUntil mutation saved just before that
+    // throw must survive — otherwise it's discarded by Spring's default
+    // rollback-on-RuntimeException and FR-1.9's lockout never engages.
+    @Transactional(noRollbackFor = AuthException.class)
     public CustomerAuthResponse verifyOtp(String phone, String otp) {
         CustomerOtpEntry entry = otpRepository.findByPhone(phone)
                 .orElseThrow(() -> new AuthException("No OTP found. Please request a new OTP."));

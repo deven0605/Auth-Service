@@ -34,6 +34,11 @@ public class SecurityConfig {
             "/api/auth/verify-otp",
             "/api/auth/customer/refresh",
             "/api/auth/customer/logout",
+            // Delivery partner OTP auth (Phase 1 — SMS bypassed, hardcoded OTP 1234)
+            "/api/auth/partner/send-otp",
+            "/api/auth/partner/verify-otp",
+            "/api/auth/partner/refresh",
+            "/api/auth/partner/logout",
             // Infrastructure
             "/h2-console/**",
             "/actuator/health"
