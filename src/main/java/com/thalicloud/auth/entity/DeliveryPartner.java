@@ -1,12 +1,14 @@
 package com.thalicloud.auth.entity;
 
 import com.thalicloud.auth.enums.PartnerLifecycleState;
+import com.thalicloud.auth.enums.VehicleType;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -35,6 +37,29 @@ public class DeliveryPartner implements UserDetails {
 
     @Column(length = 100)
     private String name; // filled during Registration (M2)
+
+    // ── M2.1 Personal Details — owned/written by delivery-service ──────────────
+    private LocalDate dob;
+
+    @Column(length = 20)
+    private String gender; // optional (FR-2.1)
+
+    @Column(length = 150)
+    private String email; // optional (FR-2.1)
+
+    @Column(length = 255)
+    private String profilePhotoUrl; // MinIO object URL for the required selfie
+
+    // ── M2.2 Vehicle Details — owned/written by delivery-service ───────────────
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private VehicleType vehicleType;
+
+    @Column(length = 20)
+    private String vehicleNumber; // required if motorized (FR-2.3)
+
+    @Column(length = 100)
+    private String vehicleModel;
 
     @Builder.Default
     @Enumerated(EnumType.STRING)
