@@ -1,5 +1,6 @@
 package com.thalicloud.auth.entity;
 
+import com.thalicloud.auth.enums.DutyStatus;
 import com.thalicloud.auth.enums.PartnerLifecycleState;
 import com.thalicloud.auth.enums.VehicleType;
 import jakarta.persistence.*;
@@ -61,6 +62,19 @@ public class DeliveryPartner implements UserDetails {
     @Column(length = 100)
     private String vehicleModel;
 
+    // ── M2.4 Bank Details — owned/written by delivery-service ──────────────────
+    @Column(length = 100)
+    private String bankAccountHolderName;
+
+    @Column(length = 30)
+    private String bankAccountNumber;
+
+    @Column(length = 15)
+    private String bankIfscCode;
+
+    @Column(length = 100)
+    private String upiId;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 25)
@@ -72,11 +86,29 @@ public class DeliveryPartner implements UserDetails {
     @Column(nullable = false)
     private boolean registrationComplete = false;
 
-    // Duty/online status — set by later milestones (M4). Read here only to
-    // enforce FR-1.13: logout is blocked while the partner is ONLINE.
+    // ── M3.1 Availability — owned/written by delivery-service. Read here only
+    // to enforce FR-1.13: logout is blocked while the partner is on duty. ──────
     @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 15)
+    private DutyStatus dutyStatus = DutyStatus.OFFLINE;
+
+    private Double currentLatitude;
+
+    private Double currentLongitude;
+
+    private LocalDateTime lastLocationAt;
+
+    // ── M3.2 Dashboard — no rating engine yet; starts at the platform default. ──
+    @Builder.Default
+    private Double rating = 5.0;
+
+    // ── M4.2 — FR-4.8: raw counters backing a future cancellation-rate metric. ──
     @Column(nullable = false)
-    private boolean onDuty = false;
+    private int totalAssignments;
+
+    @Column(nullable = false)
+    private int cancelledAssignments;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

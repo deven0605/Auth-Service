@@ -4,6 +4,7 @@ import com.thalicloud.auth.dto.response.PartnerAuthResponse;
 import com.thalicloud.auth.entity.DeliveryPartner;
 import com.thalicloud.auth.entity.DeliveryPartnerOtpEntry;
 import com.thalicloud.auth.entity.DeliveryPartnerRefreshToken;
+import com.thalicloud.auth.enums.DutyStatus;
 import com.thalicloud.auth.exception.AuthException;
 import com.thalicloud.auth.repository.DeliveryPartnerOtpEntryRepository;
 import com.thalicloud.auth.repository.DeliveryPartnerRefreshTokenRepository;
@@ -149,7 +150,7 @@ public class DeliveryPartnerAuthServiceImpl implements DeliveryPartnerAuthServic
             return; // already logged out / unknown token — idempotent no-op
         }
 
-        if (stored.getDeliveryPartner().isOnDuty()) {
+        if (stored.getDeliveryPartner().getDutyStatus() != DutyStatus.OFFLINE) {
             throw new AuthException("Go OFFLINE before logging out.");
         }
 
