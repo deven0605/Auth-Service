@@ -110,6 +110,12 @@ public class DeliveryPartner implements UserDetails {
     @Column(nullable = false)
     private int cancelledAssignments;
 
+    // ── M7 — Cash on Delivery (COD) Collection. Owned/written by
+    // delivery-service (FR-7.2 credits it, FR-7.4's remit flow debits it). ──
+    @Builder.Default
+    @Column(nullable = false)
+    private long cashInHandPaise = 0L;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
