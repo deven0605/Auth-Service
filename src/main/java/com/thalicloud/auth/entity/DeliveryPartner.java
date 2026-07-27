@@ -48,7 +48,7 @@ public class DeliveryPartner implements UserDetails {
     @Column(length = 150)
     private String email; // optional (FR-2.1)
 
-    @Column(length = 255)
+    @Column(length = 2000)
     private String profilePhotoUrl; // MinIO object URL for the required selfie
 
     // ── M2.2 Vehicle Details — owned/written by delivery-service ───────────────
@@ -74,6 +74,10 @@ public class DeliveryPartner implements UserDetails {
 
     @Column(length = 100)
     private String upiId;
+
+    // ── M12/FR-12 push notifications — owned/written by delivery-service ───────
+    @Column(length = 200)
+    private String expoPushToken;
 
     @Builder.Default
     @Enumerated(EnumType.STRING)
