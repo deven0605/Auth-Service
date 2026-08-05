@@ -5,6 +5,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
+@Slf4j
 @Service
 public class JwtServiceImpl implements JwtService {
 
@@ -29,27 +31,67 @@ public class JwtServiceImpl implements JwtService {
 
     @Override
     public String generateAccessToken(UserDetails userDetails) {
-        return buildToken(Map.of("type", "access"), userDetails, accessTokenExpiryMs);
+        log.info("generateAccessToken: start, username={}", userDetails.getUsername());
+        try {
+            String token = buildToken(Map.of("type", "access"), userDetails, accessTokenExpiryMs);
+            log.info("generateAccessToken: end, username={}", userDetails.getUsername());
+            return token;
+        } catch (Exception e) {
+            log.error("generateAccessToken: failed, username={}", userDetails.getUsername(), e);
+            throw e;
+        }
     }
 
     @Override
     public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(Map.of("type", "refresh"), userDetails, refreshTokenExpiryMs);
+        log.info("generateRefreshToken: start, username={}", userDetails.getUsername());
+        try {
+            String token = buildToken(Map.of("type", "refresh"), userDetails, refreshTokenExpiryMs);
+            log.info("generateRefreshToken: end, username={}", userDetails.getUsername());
+            return token;
+        } catch (Exception e) {
+            log.error("generateRefreshToken: failed, username={}", userDetails.getUsername(), e);
+            throw e;
+        }
     }
 
     @Override
     public String extractUsername(String token) {
-        return extractClaim(token, Claims::getSubject);
+        log.info("extractUsername: start");
+        try {
+            String username = extractClaim(token, Claims::getSubject);
+            log.info("extractUsername: end, username={}", username);
+            return username;
+        } catch (Exception e) {
+            log.error("extractUsername: failed", e);
+            throw e;
+        }
     }
 
     @Override
     public boolean isTokenValid(String token, UserDetails userDetails) {
-        return extractUsername(token).equals(userDetails.getUsername()) && !isTokenExpired(token);
+        log.info("isTokenValid: start, username={}", userDetails.getUsername());
+        try {
+            boolean valid = extractUsername(token).equals(userDetails.getUsername()) && !isTokenExpired(token);
+            log.info("isTokenValid: end, username={}, valid={}", userDetails.getUsername(), valid);
+            return valid;
+        } catch (Exception e) {
+            log.error("isTokenValid: failed, username={}", userDetails.getUsername(), e);
+            throw e;
+        }
     }
 
     @Override
     public boolean isTokenExpired(String token) {
-        return extractClaim(token, Claims::getExpiration).before(new Date());
+        log.info("isTokenExpired: start");
+        try {
+            boolean expired = extractClaim(token, Claims::getExpiration).before(new Date());
+            log.info("isTokenExpired: end, expired={}", expired);
+            return expired;
+        } catch (Exception e) {
+            log.error("isTokenExpired: failed", e);
+            throw e;
+        }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

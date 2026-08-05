@@ -21,6 +21,7 @@ import com.thalicloud.auth.repository.VendorRepository;
 import com.thalicloud.auth.service.AuthService;
 import com.thalicloud.auth.service.JwtService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -33,6 +34,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -53,48 +55,56 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse register(RegisterRequest req) {
-        if (vendorRepository.existsByEmail(req.getEmail())) {
-            throw new DuplicateResourceException("Email already registered: " + req.getEmail());
+        log.info("register: start, email={}", req.getEmail());
+        try {
+            if (vendorRepository.existsByEmail(req.getEmail())) {
+                throw new DuplicateResourceException("Email already registered: " + req.getEmail());
+            }
+
+            Vendor vendor = Vendor.builder()
+                    .ownerName(req.getOwnerName())
+                    .email(req.getEmail())
+                    .passwordHash(passwordEncoder.encode(req.getPassword()))
+                    .ownerMobile(req.getOwnerMobile())
+                    .role(VendorRole.VENDOR)
+                    .build();
+            vendorRepository.save(vendor);
+
+            Kitchen.KitchenBuilder kitchenBuilder = Kitchen.builder()
+                    .vendor(vendor)
+                    .kitchenName(req.getKitchenName())
+                    .contactNumber(req.getContactNumber())
+                    .opensAt(parseTime(req.getOpensAt()))
+                    .closesAt(parseTime(req.getClosesAt()))
+                    .imageUrl(req.getImageUrl());
+            if (req.getIsVeg() != null) {
+                kitchenBuilder.veg(req.getIsVeg());
+            }
+            Kitchen kitchen = kitchenBuilder.build();
+            kitchenRepository.save(kitchen);
+
+            KitchenAddress address = KitchenAddress.builder()
+                    .kitchen(kitchen)
+                    .streetAddress(req.getStreetAddress())
+                    .city(req.getCity())
+                    .state(req.getState())
+                    .pincode(req.getPincode())
+                    .latitude(parseDecimal(req.getLatitude()))
+                    .longitude(parseDecimal(req.getLongitude()))
+                    .build();
+            kitchenAddressRepository.save(address);
+
+            String accessToken  = jwtService.generateAccessToken(vendor);
+            String refreshToken = jwtService.generateRefreshToken(vendor);
+            persistRefreshToken(vendor, refreshToken);
+
+            AuthResponse response = buildAuthResponse(vendor, accessToken, refreshToken);
+            log.info("register: end, vendorId={}", vendor.getId());
+            return response;
+        } catch (Exception e) {
+            log.error("register: failed, email={}", req.getEmail(), e);
+            throw e;
         }
-
-        Vendor vendor = Vendor.builder()
-                .ownerName(req.getOwnerName())
-                .email(req.getEmail())
-                .passwordHash(passwordEncoder.encode(req.getPassword()))
-                .ownerMobile(req.getOwnerMobile())
-                .role(VendorRole.VENDOR)
-                .build();
-        vendorRepository.save(vendor);
-
-        Kitchen.KitchenBuilder kitchenBuilder = Kitchen.builder()
-                .vendor(vendor)
-                .kitchenName(req.getKitchenName())
-                .contactNumber(req.getContactNumber())
-                .opensAt(parseTime(req.getOpensAt()))
-                .closesAt(parseTime(req.getClosesAt()))
-                .imageUrl(req.getImageUrl());
-        if (req.getIsVeg() != null) {
-            kitchenBuilder.veg(req.getIsVeg());
-        }
-        Kitchen kitchen = kitchenBuilder.build();
-        kitchenRepository.save(kitchen);
-
-        KitchenAddress address = KitchenAddress.builder()
-                .kitchen(kitchen)
-                .streetAddress(req.getStreetAddress())
-                .city(req.getCity())
-                .state(req.getState())
-                .pincode(req.getPincode())
-                .latitude(parseDecimal(req.getLatitude()))
-                .longitude(parseDecimal(req.getLongitude()))
-                .build();
-        kitchenAddressRepository.save(address);
-
-        String accessToken  = jwtService.generateAccessToken(vendor);
-        String refreshToken = jwtService.generateRefreshToken(vendor);
-        persistRefreshToken(vendor, refreshToken);
-
-        return buildAuthResponse(vendor, accessToken, refreshToken);
     }
 
     // ── Login ─────────────────────────────────────────────────────────────────
@@ -102,20 +112,28 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse login(LoginRequest req) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword())
-        );
+        log.info("login: start, email={}", req.getEmail());
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword())
+            );
 
-        Vendor vendor = vendorRepository.findByEmail(req.getEmail())
-                .orElseThrow(() -> new ResourceNotFoundException("Vendor not found"));
+            Vendor vendor = vendorRepository.findByEmail(req.getEmail())
+                    .orElseThrow(() -> new ResourceNotFoundException("Vendor not found"));
 
-        refreshTokenRepository.revokeAllByVendorId(vendor.getId());
+            refreshTokenRepository.revokeAllByVendorId(vendor.getId());
 
-        String accessToken  = jwtService.generateAccessToken(vendor);
-        String refreshToken = jwtService.generateRefreshToken(vendor);
-        persistRefreshToken(vendor, refreshToken);
+            String accessToken  = jwtService.generateAccessToken(vendor);
+            String refreshToken = jwtService.generateRefreshToken(vendor);
+            persistRefreshToken(vendor, refreshToken);
 
-        return buildAuthResponse(vendor, accessToken, refreshToken);
+            AuthResponse response = buildAuthResponse(vendor, accessToken, refreshToken);
+            log.info("login: end, vendorId={}", vendor.getId());
+            return response;
+        } catch (Exception e) {
+            log.error("login: failed, email={}", req.getEmail(), e);
+            throw e;
+        }
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -123,25 +141,33 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse refreshToken(RefreshTokenRequest req) {
-        RefreshToken stored = refreshTokenRepository.findByToken(req.getRefreshToken())
-                .orElseThrow(() -> new AuthException("Invalid refresh token"));
+        log.info("refreshToken: start");
+        try {
+            RefreshToken stored = refreshTokenRepository.findByToken(req.getRefreshToken())
+                    .orElseThrow(() -> new AuthException("Invalid refresh token"));
 
-        if (stored.isRevoked()) {
-            throw new AuthException("Refresh token has been revoked");
+            if (stored.isRevoked()) {
+                throw new AuthException("Refresh token has been revoked");
+            }
+            if (stored.getExpiresAt().isBefore(LocalDateTime.now())) {
+                throw new AuthException("Refresh token has expired");
+            }
+
+            Vendor vendor = stored.getVendor();
+            stored.setRevoked(true);
+            refreshTokenRepository.save(stored);
+
+            String newAccessToken  = jwtService.generateAccessToken(vendor);
+            String newRefreshToken = jwtService.generateRefreshToken(vendor);
+            persistRefreshToken(vendor, newRefreshToken);
+
+            AuthResponse response = buildAuthResponse(vendor, newAccessToken, newRefreshToken);
+            log.info("refreshToken: end, vendorId={}", vendor.getId());
+            return response;
+        } catch (Exception e) {
+            log.error("refreshToken: failed", e);
+            throw e;
         }
-        if (stored.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new AuthException("Refresh token has expired");
-        }
-
-        Vendor vendor = stored.getVendor();
-        stored.setRevoked(true);
-        refreshTokenRepository.save(stored);
-
-        String newAccessToken  = jwtService.generateAccessToken(vendor);
-        String newRefreshToken = jwtService.generateRefreshToken(vendor);
-        persistRefreshToken(vendor, newRefreshToken);
-
-        return buildAuthResponse(vendor, newAccessToken, newRefreshToken);
     }
 
     // ── Logout ────────────────────────────────────────────────────────────────
@@ -149,10 +175,17 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void logout(String token) {
-        refreshTokenRepository.findByToken(token).ifPresent(rt -> {
-            rt.setRevoked(true);
-            refreshTokenRepository.save(rt);
-        });
+        log.info("logout: start");
+        try {
+            refreshTokenRepository.findByToken(token).ifPresent(rt -> {
+                rt.setRevoked(true);
+                refreshTokenRepository.save(rt);
+            });
+            log.info("logout: end");
+        } catch (Exception e) {
+            log.error("logout: failed", e);
+            throw e;
+        }
     }
 
     // ── Profile ───────────────────────────────────────────────────────────────
@@ -160,9 +193,17 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public VendorProfileResponse getProfile(UUID vendorId) {
-        Vendor vendor = vendorRepository.findById(vendorId)
-                .orElseThrow(() -> new ResourceNotFoundException("Vendor not found: " + vendorId));
-        return VendorMapper.toProfileResponse(vendor);
+        log.info("getProfile: start, vendorId={}", vendorId);
+        try {
+            Vendor vendor = vendorRepository.findById(vendorId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Vendor not found: " + vendorId));
+            VendorProfileResponse response = VendorMapper.toProfileResponse(vendor);
+            log.info("getProfile: end, vendorId={}", vendorId);
+            return response;
+        } catch (Exception e) {
+            log.error("getProfile: failed, vendorId={}", vendorId, e);
+            throw e;
+        }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

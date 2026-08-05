@@ -41,7 +41,11 @@ public class SecurityConfig {
             "/api/auth/partner/logout",
             // Infrastructure
             "/h2-console/**",
-            "/actuator/health"
+            "/actuator/health",
+            // Swagger / OpenAPI docs
+            "/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html"
     };
 
     @Bean

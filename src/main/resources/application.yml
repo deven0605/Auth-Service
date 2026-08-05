@@ -22,7 +22,11 @@ spring:
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
-      ddl-auto: create    # drops + recreates schema on every auth-service start
+      # 'update' only: other services (delivery-service, vendors-service, ...) hold
+      # FK references into tables owned here (e.g. delivery_partners). 'create'
+      # used to drop + recreate this schema on every start, orphaning their rows
+      # and breaking their FK constraints on the next startup.
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
@@ -44,6 +48,10 @@ management:
       show-details: never
 
 logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%C{1}.%M:%L] - %msg%n"
+  file:
+    name: D:/logs/backend/Auth-Service/.logs
   level:
     com.thalicloud: DEBUG
     org.springframework.security: INFO

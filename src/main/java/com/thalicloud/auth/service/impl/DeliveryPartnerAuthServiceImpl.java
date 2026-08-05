@@ -12,12 +12,14 @@ import com.thalicloud.auth.repository.DeliveryPartnerRepository;
 import com.thalicloud.auth.service.DeliveryPartnerAuthService;
 import com.thalicloud.auth.service.JwtService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DeliveryPartnerAuthServiceImpl implements DeliveryPartnerAuthService {
@@ -41,19 +43,26 @@ public class DeliveryPartnerAuthServiceImpl implements DeliveryPartnerAuthServic
     @Override
     @Transactional
     public void sendOtp(String phone) {
-        DeliveryPartnerOtpEntry entry = otpRepository.findByPhone(phone)
-                .orElse(DeliveryPartnerOtpEntry.builder().phone(phone).build());
+        log.info("sendOtp: start, phone={}", phone);
+        try {
+            DeliveryPartnerOtpEntry entry = otpRepository.findByPhone(phone)
+                    .orElse(DeliveryPartnerOtpEntry.builder().phone(phone).build());
 
-        if (entry.getLockedUntil() != null && entry.getLockedUntil().isAfter(LocalDateTime.now())) {
-            throw new AuthException("Too many failed attempts. Please try again later.");
+            if (entry.getLockedUntil() != null && entry.getLockedUntil().isAfter(LocalDateTime.now())) {
+                throw new AuthException("Too many failed attempts. Please try again later.");
+            }
+
+            // Phase 2 — replace this block: generate random OTP, BCrypt-hash it, send via SMS gateway
+            entry.setOtpHash(HARDCODED_OTP);
+            entry.setExpiresAt(LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES));
+            entry.setAttemptCount(0);
+            entry.setLockedUntil(null);
+            otpRepository.save(entry);
+            log.info("sendOtp: end, phone={}", phone);
+        } catch (Exception e) {
+            log.error("sendOtp: failed, phone={}", phone, e);
+            throw e;
         }
-
-        // Phase 2 — replace this block: generate random OTP, BCrypt-hash it, send via SMS gateway
-        entry.setOtpHash(HARDCODED_OTP);
-        entry.setExpiresAt(LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES));
-        entry.setAttemptCount(0);
-        entry.setLockedUntil(null);
-        otpRepository.save(entry);
     }
 
     // ── Verify OTP (FR-1.6 — FR-1.10) ────────────────────────────────────────
@@ -65,48 +74,56 @@ public class DeliveryPartnerAuthServiceImpl implements DeliveryPartnerAuthServic
     // rollback-on-RuntimeException and FR-1.9's lockout never engages.
     @Transactional(noRollbackFor = AuthException.class)
     public PartnerAuthResponse verifyOtp(String phone, String otp) {
-        DeliveryPartnerOtpEntry entry = otpRepository.findByPhone(phone)
-                .orElseThrow(() -> new AuthException("No OTP found. Please request a new OTP."));
+        log.info("verifyOtp: start, phone={}", phone);
+        try {
+            DeliveryPartnerOtpEntry entry = otpRepository.findByPhone(phone)
+                    .orElseThrow(() -> new AuthException("No OTP found. Please request a new OTP."));
 
-        if (entry.getLockedUntil() != null && entry.getLockedUntil().isAfter(LocalDateTime.now())) {
-            throw new AuthException("Account locked due to too many attempts. Try again in " + LOCKOUT_MINUTES + " minutes.");
-        }
-
-        if (entry.getExpiresAt().isBefore(LocalDateTime.now())) {
-            otpRepository.delete(entry);
-            throw new AuthException("OTP has expired. Please request a new one.");
-        }
-
-        // Phase 2 — replace plain equality with: passwordEncoder.matches(otp, entry.getOtpHash())
-        if (!HARDCODED_OTP.equals(otp)) {
-            entry.setAttemptCount(entry.getAttemptCount() + 1);
-            if (entry.getAttemptCount() >= MAX_ATTEMPTS) {
-                entry.setLockedUntil(LocalDateTime.now().plusMinutes(LOCKOUT_MINUTES));
+            if (entry.getLockedUntil() != null && entry.getLockedUntil().isAfter(LocalDateTime.now())) {
+                throw new AuthException("Account locked due to too many attempts. Try again in " + LOCKOUT_MINUTES + " minutes.");
             }
-            otpRepository.save(entry);
-            throw new AuthException("Incorrect OTP. Please try again.");
+
+            if (entry.getExpiresAt().isBefore(LocalDateTime.now())) {
+                otpRepository.delete(entry);
+                throw new AuthException("OTP has expired. Please request a new one.");
+            }
+
+            // Phase 2 — replace plain equality with: passwordEncoder.matches(otp, entry.getOtpHash())
+            if (!HARDCODED_OTP.equals(otp)) {
+                entry.setAttemptCount(entry.getAttemptCount() + 1);
+                if (entry.getAttemptCount() >= MAX_ATTEMPTS) {
+                    entry.setLockedUntil(LocalDateTime.now().plusMinutes(LOCKOUT_MINUTES));
+                }
+                otpRepository.save(entry);
+                throw new AuthException("Incorrect OTP. Please try again.");
+            }
+
+            otpRepository.delete(entry);
+
+            // A bare record is created on first verification (registrationComplete = false)
+            // so the M2 registration flow has a partner id to attach documents to.
+            // FR-1.10: isNewUser drives routing to Registration; lifecycleState only
+            // matters once registrationComplete is true.
+            boolean isNewUser = !partnerRepository.existsByPhone(phone);
+            DeliveryPartner partner = partnerRepository.findByPhone(phone)
+                    .orElseGet(() -> partnerRepository.save(DeliveryPartner.builder().phone(phone).build()));
+
+            String accessToken  = jwtService.generateAccessToken(partner);
+            String refreshToken = jwtService.generateRefreshToken(partner);
+            persistRefreshToken(partner, refreshToken);
+
+            PartnerAuthResponse response = PartnerAuthResponse.builder()
+                    .accessToken(accessToken)
+                    .refreshToken(refreshToken)
+                    .newUser(isNewUser)
+                    .lifecycleState(partner.getLifecycleState())
+                    .build();
+            log.info("verifyOtp: end, phone={}", phone);
+            return response;
+        } catch (Exception e) {
+            log.error("verifyOtp: failed, phone={}", phone, e);
+            throw e;
         }
-
-        otpRepository.delete(entry);
-
-        // A bare record is created on first verification (registrationComplete = false)
-        // so the M2 registration flow has a partner id to attach documents to.
-        // FR-1.10: isNewUser drives routing to Registration; lifecycleState only
-        // matters once registrationComplete is true.
-        boolean isNewUser = !partnerRepository.existsByPhone(phone);
-        DeliveryPartner partner = partnerRepository.findByPhone(phone)
-                .orElseGet(() -> partnerRepository.save(DeliveryPartner.builder().phone(phone).build()));
-
-        String accessToken  = jwtService.generateAccessToken(partner);
-        String refreshToken = jwtService.generateRefreshToken(partner);
-        persistRefreshToken(partner, refreshToken);
-
-        return PartnerAuthResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
-                .newUser(isNewUser)
-                .lifecycleState(partner.getLifecycleState())
-                .build();
     }
 
     // ── Refresh Token (FR-1.12) ──────────────────────────────────────────────
@@ -114,30 +131,38 @@ public class DeliveryPartnerAuthServiceImpl implements DeliveryPartnerAuthServic
     @Override
     @Transactional
     public PartnerAuthResponse refreshToken(String tokenStr) {
-        DeliveryPartnerRefreshToken stored = refreshTokenRepository.findByToken(tokenStr)
-                .orElseThrow(() -> new AuthException("Invalid refresh token"));
+        log.info("refreshToken: start");
+        try {
+            DeliveryPartnerRefreshToken stored = refreshTokenRepository.findByToken(tokenStr)
+                    .orElseThrow(() -> new AuthException("Invalid refresh token"));
 
-        if (stored.isRevoked()) {
-            throw new AuthException("Refresh token has been revoked");
+            if (stored.isRevoked()) {
+                throw new AuthException("Refresh token has been revoked");
+            }
+            if (stored.getExpiresAt().isBefore(LocalDateTime.now())) {
+                throw new AuthException("Refresh token has expired");
+            }
+
+            DeliveryPartner partner = stored.getDeliveryPartner();
+            stored.setRevoked(true);
+            refreshTokenRepository.save(stored);
+
+            String newAccessToken  = jwtService.generateAccessToken(partner);
+            String newRefreshToken = jwtService.generateRefreshToken(partner);
+            persistRefreshToken(partner, newRefreshToken);
+
+            PartnerAuthResponse response = PartnerAuthResponse.builder()
+                    .accessToken(newAccessToken)
+                    .refreshToken(newRefreshToken)
+                    .newUser(!partner.isRegistrationComplete())
+                    .lifecycleState(partner.getLifecycleState())
+                    .build();
+            log.info("refreshToken: end, partnerId={}", partner.getId());
+            return response;
+        } catch (Exception e) {
+            log.error("refreshToken: failed", e);
+            throw e;
         }
-        if (stored.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new AuthException("Refresh token has expired");
-        }
-
-        DeliveryPartner partner = stored.getDeliveryPartner();
-        stored.setRevoked(true);
-        refreshTokenRepository.save(stored);
-
-        String newAccessToken  = jwtService.generateAccessToken(partner);
-        String newRefreshToken = jwtService.generateRefreshToken(partner);
-        persistRefreshToken(partner, newRefreshToken);
-
-        return PartnerAuthResponse.builder()
-                .accessToken(newAccessToken)
-                .refreshToken(newRefreshToken)
-                .newUser(!partner.isRegistrationComplete())
-                .lifecycleState(partner.getLifecycleState())
-                .build();
     }
 
     // ── Logout (FR-1.13) ─────────────────────────────────────────────────────
@@ -145,17 +170,25 @@ public class DeliveryPartnerAuthServiceImpl implements DeliveryPartnerAuthServic
     @Override
     @Transactional
     public void logout(String tokenStr) {
-        DeliveryPartnerRefreshToken stored = refreshTokenRepository.findByToken(tokenStr).orElse(null);
-        if (stored == null) {
-            return; // already logged out / unknown token — idempotent no-op
-        }
+        log.info("logout: start");
+        try {
+            DeliveryPartnerRefreshToken stored = refreshTokenRepository.findByToken(tokenStr).orElse(null);
+            if (stored == null) {
+                log.info("logout: end, no matching token found");
+                return; // already logged out / unknown token — idempotent no-op
+            }
 
-        if (stored.getDeliveryPartner().getDutyStatus() != DutyStatus.OFFLINE) {
-            throw new AuthException("Go OFFLINE before logging out.");
-        }
+            if (stored.getDeliveryPartner().getDutyStatus() != DutyStatus.OFFLINE) {
+                throw new AuthException("Go OFFLINE before logging out.");
+            }
 
-        stored.setRevoked(true);
-        refreshTokenRepository.save(stored);
+            stored.setRevoked(true);
+            refreshTokenRepository.save(stored);
+            log.info("logout: end");
+        } catch (Exception e) {
+            log.error("logout: failed", e);
+            throw e;
+        }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
